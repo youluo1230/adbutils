@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	_ "github.com/xmsociety/adbutils/binaries"
+	_ "github.com/youluo1230/adbutils/binaries"
 	"io"
 	"log"
 	"net"

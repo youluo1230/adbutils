@@ -3,7 +3,7 @@ package test
 import (
 	"encoding/binary"
 	"fmt"
-	"github.com/xmsociety/adbutils"
+	"github.com/youluo1230/adbutils"
 	"testing"
 )
 
