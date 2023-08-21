@@ -378,6 +378,7 @@ func (adb *AdbClient) connect() *AdbConnection {
 
 func (adb *AdbClient) ServerVersion() int {
 	c := adb.connect()
+	defer c.Close()
 	c.SendCommand("host:version")
 	c.CheckOkay()
 	res := c.ReadStringBlock()
@@ -388,6 +389,7 @@ func (adb *AdbClient) ServerVersion() int {
 func (adb *AdbClient) ServerKill() {
 	if checkServer(adb.Host, adb.Port) {
 		c := adb.connect()
+		defer c.Close()
 		c.SendCommand("host:kill")
 		c.CheckOkay()
 	}
@@ -400,15 +402,20 @@ func (adb *AdbClient) WaitFor() {
 func (adb *AdbClient) Connect(addr string) string {
 	//addr (str): adb remote address [eg: 191.168.0.1:5555]
 	c := adb.connect()
+	defer c.Close()
 	c.SendCommand("host:connect:" + addr)
+	c.CheckOkay()
 	return c.ReadStringBlock()
 }
 
 func (adb *AdbClient) Disconnect(addr string, raiseErr bool) string {
 	//addr (str): adb remote address [eg: 191.168.0.1:5555]
 	c := adb.connect()
+	defer c.Close()
 	c.SendCommand("host:disconnect:" + addr)
-	return c.ReadStringBlock()
+	c.CheckOkay()
+	s := c.ReadStringBlock()
+	return s
 }
 
 type SerialNTransportID struct {
@@ -424,6 +431,7 @@ func (adb *AdbClient) Shell(serial string, command string, stream bool) interfac
 func (adb *AdbClient) DeviceList() []AdbDevice {
 	res := []AdbDevice{}
 	c := adb.connect()
+	defer c.Close()
 	c.SendCommand("host:devices")
 	c.CheckOkay()
 	outPut := c.ReadStringBlock()

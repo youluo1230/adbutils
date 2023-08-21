@@ -395,12 +395,11 @@ func (sync Sync) prepareSync(path, cmd string) (*AdbConnection, error) {
 	c := sync.AdbClient.Device(SerialNTransportID{Serial: sync.Serial}).openTransport("", 10)
 	c.SendCommand("sync:")
 	c.CheckOkay()
-	//pathLength := len([]byte(path))
-	bs := make([]byte, 4)
-	binary.LittleEndian.PutUint32(bs, uint32(5)) // python struct.pack("<I",  小端序 int 4byte
-	cmdByte := []byte(cmd)
-	msg := append(cmdByte, bs...)
-	msg = append(msg, []byte(path)...)
+	pathBy := []byte(path)
+	z := make([]byte, 4)
+	binary.LittleEndian.PutUint32(z, uint32(len(pathBy)))
+	msg := append([]byte(cmd), z...)
+	msg = append(msg, pathBy...)
 	_, err := c.Conn.Write(msg)
 	if err != nil {
 		log.Println("prepareSync write error: ", err.Error())
@@ -415,7 +414,8 @@ func (sync Sync) Exist(path string) bool {
 
 func (sync Sync) Stat(path string) FileInfo {
 	c, err := sync.prepareSync(path, "STAT")
-	if c.ReadString(4) != "STAT" || err != nil {
+	defer c.Close()
+	if c.ReadString(4) == "stat" || err != nil {
 		log.Println("Stat sync error!")
 	}
 	fileInfo := FileInfo{Path: path}
@@ -434,6 +434,7 @@ func (sync Sync) Stat(path string) FileInfo {
 
 func (sync Sync) IterDirectory(path string) []FileInfo {
 	c, err := sync.prepareSync(path, "LIST")
+	defer c.Close()
 	if err != nil {
 		log.Println("get file list error ", err.Error())
 	}
@@ -469,10 +470,11 @@ func (sync Sync) Push(src, dst string, mode int, check bool) int {
 	//path := dst + "," + ""
 	path := dst + "," + strconv.Itoa(syscall.S_IFREG|mode)
 	c, err := sync.prepareSync(path, "SEND")
+	defer c.Close()
 	if err != nil {
 		log.Println("Sync Push err ! ", err.Error())
 	}
-	file, err := os.OpenFile(src, os.O_WRONLY|os.O_CREATE, 0666)
+	file, err := os.OpenFile(src, os.O_RDONLY, 0666)
 	if err != nil {
 		log.Println("when Push, read local file error! ", err.Error())
 	}
@@ -509,6 +511,7 @@ func (sync Sync) Push(src, dst string, mode int, check bool) int {
 	}
 	if check {
 		fileSize := sync.Stat(dst).Size
+		println(dst)
 		if fileSize != totalSize {
 			log.Println(fmt.Sprintf("Push not complete, expect pushed %d, actually pushed %d", totalSize, fileSize))
 		}
@@ -518,6 +521,7 @@ func (sync Sync) Push(src, dst string, mode int, check bool) int {
 
 func (sync Sync) IterContent(path string) []byte {
 	c, err := sync.prepareSync(path, "RECV")
+	defer c.Close()
 	if err != nil {
 		log.Println("IterContent error ", err.Error())
 	}
