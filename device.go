@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net"
@@ -409,16 +410,23 @@ func (sync Sync) prepareSync(path, cmd string) (*AdbConnection, error) {
 }
 
 func (sync Sync) Exist(path string) bool {
-	return sync.Stat(path).Mtime != nil
+	stat, err := sync.Stat(path)
+	if err != nil {
+		return false
+	}
+	return stat.Mtime != nil
 }
 
-func (sync Sync) Stat(path string) FileInfo {
+func (sync Sync) Stat(path string) (*FileInfo, error) {
+	fileInfo := FileInfo{Path: path}
 	c, err := sync.prepareSync(path, "STAT")
+	if err != nil {
+		return &fileInfo, err
+	}
 	defer c.Close()
 	if c.ReadString(4) == "stat" || err != nil {
 		log.Println("Stat sync error!")
 	}
-	fileInfo := FileInfo{Path: path}
 	res := []uint32{}
 	for i := 0; i < 3; i++ {
 		res = append(res, binary.LittleEndian.Uint32(c.Read(4)))
@@ -429,14 +437,14 @@ func (sync Sync) Stat(path string) FileInfo {
 		mtime := time.Unix(int64(res[2]), 0)
 		fileInfo.Mtime = &mtime
 	}
-	return fileInfo
+	return &fileInfo, nil
 }
 
-func (sync Sync) IterDirectory(path string) []FileInfo {
+func (sync Sync) IterDirectory(path string) (*[]FileInfo, error) {
 	c, err := sync.prepareSync(path, "LIST")
 	defer c.Close()
 	if err != nil {
-		log.Println("get file list error ", err.Error())
+		return nil, err
 	}
 	fileInfos := []FileInfo{}
 	for {
@@ -459,33 +467,34 @@ func (sync Sync) IterDirectory(path string) []FileInfo {
 		}
 		fileInfos = append(fileInfos, fileInfo)
 	}
-	return fileInfos
+	return &fileInfos, nil
 }
 
-func (sync Sync) List(path string) []FileInfo {
+func (sync Sync) List(path string) (*[]FileInfo, error) {
 	return sync.IterDirectory(path)
 }
 
-func (sync Sync) Push(src, dst string, mode int, check bool) int {
-	//path := dst + "," + ""
+func (sync Sync) Push(src, dst string, mode int, check bool) (int, error) {
 	path := dst + "," + strconv.Itoa(syscall.S_IFREG|mode)
 	c, err := sync.prepareSync(path, "SEND")
 	defer c.Close()
 	if err != nil {
 		log.Println("Sync Push err ! ", err.Error())
 	}
-	file, err := os.OpenFile(src, os.O_RDONLY, 0666)
+	file, err := os.OpenFile(src, os.O_RDONLY, 0644)
+	defer file.Close()
 	if err != nil {
-		log.Println("when Push, read local file error! ", err.Error())
+		return 0, err
 	}
 	totalSize := 0
 	for {
-		chunk := make([]byte, 0)
-		_, err = file.Read(chunk)
-		if err != nil {
+		chunk := make([]byte, 4096)
+		n, err := file.Read(chunk)
+		if err != nil && err != io.EOF {
 			log.Println("when Push, read local file error! ", err.Error())
+			break
 		}
-		if len(chunk) == 0 {
+		if err == io.EOF || n == 0 {
 			msg := []byte("DONE")
 			bs := make([]byte, 4)
 			binary.LittleEndian.PutUint32(bs, uint32(time.Now().Unix()))
@@ -496,27 +505,39 @@ func (sync Sync) Push(src, dst string, mode int, check bool) int {
 			}
 			break
 		}
-		msg := []byte("DONE")
+		msg := []byte("DATA")
 		bs := make([]byte, 4)
-		binary.LittleEndian.PutUint32(bs, uint32(len(chunk)))
+		binary.LittleEndian.PutUint32(bs, uint32(n))
 		msg = append(msg, bs...)
 		_, err = c.Conn.Write(msg)
 		if err != nil {
 			log.Println("when push write content error! ", err.Error())
+			break
 		}
-		_, err = c.Conn.Write(chunk)
+		_, err = c.Conn.Write(chunk[:n])
 		if err != nil {
 			log.Println("when push write content error! ", err.Error())
+			break
 		}
+		totalSize = totalSize + n
 	}
 	if check {
-		fileSize := sync.Stat(dst).Size
-		println(dst)
-		if fileSize != totalSize {
-			log.Println(fmt.Sprintf("Push not complete, expect pushed %d, actually pushed %d", totalSize, fileSize))
+		sc := 0
+		for {
+			stat, _ := sync.Stat(dst)
+			fileSize := stat.Size
+			if fileSize == totalSize {
+				break
+			} else {
+				if sc == fileSize {
+					log.Println(fmt.Sprintf("Push not complete, expect pushed %d, actually pushed %d", totalSize, fileSize))
+				}
+			}
+			sc = fileSize
 		}
+
 	}
-	return totalSize
+	return totalSize, nil
 }
 
 func (sync Sync) IterContent(path string) []byte {
@@ -525,7 +546,7 @@ func (sync Sync) IterContent(path string) []byte {
 	if err != nil {
 		log.Println("IterContent error ", err.Error())
 	}
-	chunks := []byte{}
+	chunks := make([]byte, 0)
 	for {
 		cmd := c.ReadString(4)
 		switch cmd {
@@ -533,6 +554,7 @@ func (sync Sync) IterContent(path string) []byte {
 			strSize := binary.LittleEndian.Uint32(c.Read(4))
 			errMsg := c.ReadString(int(strSize))
 			log.Println(fmt.Sprintf("Get %s Error %s", errMsg, path))
+			return chunks
 		case DATA:
 			chunkSize := binary.LittleEndian.Uint32(c.Read(4))
 			chunk := c.Read(int(chunkSize))
@@ -541,12 +563,12 @@ func (sync Sync) IterContent(path string) []byte {
 			}
 			chunks = append(chunks, chunk...)
 		case DONE:
-			break
+			return chunks
 		default:
 			log.Println("Invalid sync cmd: ", cmd)
+			return chunks
 		}
 	}
-	return chunks
 }
 
 func (sync Sync) ReadBytes(path string) []byte {
@@ -557,8 +579,9 @@ func (sync Sync) ReadText(path string) string {
 	return string(sync.ReadBytes(path))
 }
 
-func (sync Sync) Pull(src, dst string) int {
-	f, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE, 0666)
+func (sync Sync) Pull(src, dst string) (int, error) {
+	f, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC, 0644)
+	defer f.Close()
 	if err != nil {
 		log.Println("Sync pull file error! ", err.Error())
 	}
@@ -566,7 +589,7 @@ func (sync Sync) Pull(src, dst string) int {
 	size, err := f.Write(bytes)
 	if err != nil {
 		log.Println("Sync pull file error, when write! ", err.Error())
-		return 0
+		return 0, err
 	}
-	return size
+	return size, nil
 }

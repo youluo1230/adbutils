@@ -5,7 +5,7 @@
 [![Release](https://img.shields.io/github/release/xmsociety/adbutils.svg?style=flat-square)](https://github.com/youluo1230/adbutils/releases)
 [![Goproxy.cn](https://goproxy.cn/stats/github.com/youluo1230/adbutils/badges/download-count.svg)](https://goproxy.cn)
 
-Transfer from [python adbutils](https://github.com/openatx/adbutils)
+Transfer from [xmsociety/adbutils](https://github.com/xmsociety/adbutils)
 
 
 **Table of Contents**

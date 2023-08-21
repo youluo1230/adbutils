@@ -17,5 +17,10 @@ func TestServerVersion(t *testing.T) {
 
 func TestConnect(t *testing.T) {
 	adb := adbutils.NewAdb("localhost", 5037, 10)
-	println(adb.Device(adbutils.SerialNTransportID{Serial: "a918b5a9"}).Sync().Push("D:\\软件\\bd.apk", "/data/local/tmp/bd.apk", 0755, true))
+	directory, _ := adb.Device(adbutils.SerialNTransportID{Serial: "a918b5a9"}).Sync().IterDirectory("/sdcard/222")
+	for _, info := range *directory {
+		println(info.Size)
+	}
+	//println(adb.Device(adbutils.SerialNTransportID{Serial: "a918b5a9"}).Sync().Stat("/data/local/tmp/output.txt").Mtime.String())
+	//println(adb.Device(adbutils.SerialNTransportID{Serial: "a918b5a9"}).Sync().Push("1.txt", "/sdcard/222/1.txt", 0, true))
 }

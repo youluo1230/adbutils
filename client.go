@@ -153,8 +153,10 @@ func (adbConnection AdbConnection) readFully(n int) []byte {
 	buffer := make([]byte, n)
 	result := bytes.NewBuffer(nil)
 	for t < n {
-		length, err := adbConnection.Conn.Read(buffer[0:n])
+		length, err := adbConnection.Conn.Read(buffer[t:n])
+		result.Write(buffer[:length])
 		if err != nil {
+			println(err.Error())
 			if err == io.EOF {
 				break
 			}
@@ -163,7 +165,6 @@ func (adbConnection AdbConnection) readFully(n int) []byte {
 		if length == 0 {
 			break
 		}
-		result.Write(buffer[0:length])
 		t += length
 	}
 	return result.Bytes()
