@@ -175,13 +175,16 @@ func (mixin ShellMixin) Remove(path string) {
 	mixin.run("rm " + path)
 }
 
-func (mixin ShellMixin) openTransport(command string, timeOut time.Duration) *AdbConnection {
-	c := mixin.Client.connect()
+func (mixin ShellMixin) openTransport(command string, timeOut time.Duration) (*AdbConnection, error) {
+	c, err := mixin.Client.connect()
+	if err != nil {
+		return nil, err
+	}
 	if timeOut > 0 {
 		// 这里修改了一下 使用c设置Conn的timeout
 		err := c.SetTimeout(timeOut)
 		if err != nil {
-			return nil
+			return nil, err
 		}
 	}
 	if command != "" {
@@ -211,7 +214,7 @@ func (mixin ShellMixin) openTransport(command string, timeOut time.Duration) *Ad
 		}
 		c.CheckOkay()
 	}
-	return c
+	return c, nil
 }
 
 type AdbDevice struct {
@@ -219,7 +222,10 @@ type AdbDevice struct {
 }
 
 func (adbDevice AdbDevice) getWithCommand(cmd string) string {
-	c := adbDevice.openTransport("", adbDevice.Client.SocketTime)
+	c, err := adbDevice.openTransport("", adbDevice.Client.SocketTime)
+	if err != nil {
+		return err.Error()
+	}
 	c.SendCommand(strings.Join([]string{"host-serial", adbDevice.Serial, cmd}, ":"))
 	c.CheckOkay()
 	return c.ReadStringBlock()
@@ -297,7 +303,10 @@ func (adbDevice AdbDevice) AdbOut(command string) string {
 }
 
 func (adbDevice AdbDevice) Shell(cmdargs string, stream bool, timeOut time.Duration) interface{} {
-	c := adbDevice.openTransport("", timeOut)
+	c, err := adbDevice.openTransport("", timeOut)
+	if err != nil {
+		return err
+	}
 	c.SendCommand("shell:" + cmdargs)
 	c.CheckOkay()
 	if stream {
@@ -313,7 +322,7 @@ func (adbDevice AdbDevice) ShellOutPut(cmd string) string {
 	return res.(string)
 }
 
-func (adbDevice AdbDevice) ForWard(local, remote string, noRebind bool) *AdbConnection {
+func (adbDevice AdbDevice) ForWard(local, remote string, noRebind bool) (*AdbConnection, error) {
 	args := []string{"forward"}
 	if noRebind {
 		args = append(args, "norebind")
@@ -344,9 +353,12 @@ func (adbDevice AdbDevice) ForWardPort(remote interface{}) int {
 }
 
 func (adbDevice AdbDevice) ForwardList() []ForwardItem {
-	c := adbDevice.openTransport("list-forward", adbDevice.Client.SocketTime)
-	content := c.ReadStringBlock()
 	forwardItems := []ForwardItem{}
+	c, err := adbDevice.openTransport("list-forward", adbDevice.Client.SocketTime)
+	if err != nil {
+		return forwardItems
+	}
+	content := c.ReadStringBlock()
 	for _, line := range strings.Split(content, "\n") {
 		parts := strings.TrimSpace(line)
 		if len(parts) != 3 {
@@ -366,8 +378,11 @@ func (adbDevice AdbDevice) Push(local, remote string) string {
 	return adbDevice.AdbOut(fmt.Sprintf("push %v %v", local, remote))
 }
 
-func (adbDevice AdbDevice) CreateConnection(netWork, address string) net.Conn {
-	c := adbDevice.openTransport("", 0)
+func (adbDevice AdbDevice) CreateConnection(netWork, address string) (net.Conn, error) {
+	c, err := adbDevice.openTransport("", 0)
+	if err != nil {
+		return nil, err
+	}
 	c.SendCommand("host:transport:" + adbDevice.Serial)
 	c.CheckOkay()
 	switch netWork {
@@ -383,7 +398,7 @@ func (adbDevice AdbDevice) CreateConnection(netWork, address string) net.Conn {
 	default:
 		panic("not support net work: " + netWork)
 	}
-	return c.Conn
+	return c.Conn, nil
 }
 
 // Sync region ync
@@ -393,7 +408,10 @@ type Sync struct {
 }
 
 func (sync Sync) prepareSync(path, cmd string) (*AdbConnection, error) {
-	c := sync.AdbClient.Device(SerialNTransportID{Serial: sync.Serial}).openTransport("", 10)
+	c, err := sync.AdbClient.Device(SerialNTransportID{Serial: sync.Serial}).openTransport("", 10)
+	if err != nil {
+		return nil, err
+	}
 	c.SendCommand("sync:")
 	c.CheckOkay()
 	pathBy := []byte(path)
@@ -401,9 +419,8 @@ func (sync Sync) prepareSync(path, cmd string) (*AdbConnection, error) {
 	binary.LittleEndian.PutUint32(z, uint32(len(pathBy)))
 	msg := append([]byte(cmd), z...)
 	msg = append(msg, pathBy...)
-	_, err := c.Conn.Write(msg)
+	_, err = c.Conn.Write(msg)
 	if err != nil {
-		log.Println("prepareSync write error: ", err.Error())
 		return nil, err
 	}
 	return c, nil

@@ -182,7 +182,6 @@ func (adbConnection AdbConnection) ReadString(n int) string {
 	res := adbConnection.Read(n)
 	return string(res)
 }
-
 func (adbConnection AdbConnection) ReadStringBlock() string {
 	str := adbConnection.ReadString(4)
 	if len(str) == 0 {
@@ -378,10 +377,10 @@ func (adb *AdbClient) connect() (*AdbConnection, error) {
 
 func (adb *AdbClient) ServerVersion() (int, error) {
 	c, err := adb.connect()
-	defer c.Close()
 	if err != nil {
 		return 0, err
 	}
+	defer c.Close()
 	c.SendCommand("host:version")
 	c.CheckOkay()
 	res := c.ReadStringBlock()
@@ -392,10 +391,10 @@ func (adb *AdbClient) ServerVersion() (int, error) {
 func (adb *AdbClient) ServerKill() error {
 	if checkServer(adb.Host, adb.Port) {
 		c, err := adb.connect()
-		defer c.Close()
 		if err != nil {
 			return err
 		}
+		defer c.Close()
 		c.SendCommand("host:kill")
 		c.CheckOkay()
 	}
@@ -409,18 +408,24 @@ func (adb *AdbClient) WaitFor() {
 func (adb *AdbClient) Connect(addr string) bool {
 	//addr (str): adb remote address [eg: 191.168.0.1:5555]
 	c, err := adb.connect()
-	defer c.Close()
 	if err != nil {
 		return false
 	}
+	defer c.Close()
 	c.SendCommand("host:connect:" + addr)
 	c.CheckOkay()
+	if strings.Index(c.ReadStringBlock(), "由于") > -1 {
+		return false
+	}
 	return true
 }
 
 func (adb *AdbClient) Disconnect(addr string, raiseErr bool) bool {
 	//addr (str): adb remote address [eg: 191.168.0.1:5555]
-	c, _ := adb.connect()
+	c, err := adb.connect()
+	if err != nil {
+		return false
+	}
 	defer c.Close()
 	c.SendCommand("host:disconnect:" + addr)
 	c.CheckOkay()
