@@ -184,9 +184,6 @@ func (adbConnection AdbConnection) ReadString(n int) string {
 }
 func (adbConnection AdbConnection) ReadStringBlock() string {
 	str := adbConnection.ReadString(4)
-	if len(str) == 0 {
-		log.Println("receive data error connection closed")
-	}
 	size, _ := strconv.ParseUint(str, 16, 32)
 	return adbConnection.ReadString(int(size))
 }
@@ -204,14 +201,12 @@ func (adbConnection AdbConnection) ReadUntilClose() string {
 	return string(buf)
 }
 
-func (adbConnection AdbConnection) CheckOkay() {
+func (adbConnection AdbConnection) CheckOkay() bool {
 	data := adbConnection.ReadString(4)
-	if data == FAIL {
-		log.Println(fmt.Sprintf("receive data: %v connection closed", data))
-	} else if data == OKAY {
-		return
+	if data == OKAY {
+		return true
 	}
-	log.Println(fmt.Sprintf("Unknown data: %v", data))
+	return false
 }
 
 // end region AdbConnection
@@ -326,7 +321,6 @@ func AdbPath() string {
 	dir, _ := filepath.Abs(path.Join(currentPath, "binaries", subPath))
 	exist, err := pathExists(dir)
 	if err != nil {
-		log.Println(err.Error())
 		return ""
 	}
 	if !exist {
@@ -348,12 +342,10 @@ func AdbPath() string {
 			err = downloadFile(url+"/AdbWinUsbApi.dll", AdbWinUsbApiPath, wg)
 			wg.Wait()
 			if err != nil {
-				log.Println("get adb error!", err.Error())
 			}
 		} else {
 			err = downloadFile(url, adbPath, nil)
 			if err != nil {
-				log.Println("get adb error!", err.Error())
 			}
 			_ = os.Chmod(adbPath, 0777)
 		}
@@ -429,6 +421,7 @@ func (adb *AdbClient) Disconnect(addr string, raiseErr bool) bool {
 	defer c.Close()
 	c.SendCommand("host:disconnect:" + addr)
 	c.CheckOkay()
+	c.ReadStringBlock()
 	return true
 }
 
@@ -472,11 +465,7 @@ func (adb *AdbClient) Device(snNtid SerialNTransportID) AdbDevice {
 	serial := os.Getenv("ANDROID_SERIAL")
 	if serial != "" {
 		ds := adb.DeviceList()
-		if len(ds) == 0 {
-			log.Println("Error: Can't find any android device/emulator")
-		} else if len(ds) > 1 {
-			log.Println("more than one device/emulator, please specify the serial number")
-		} else {
+		if len(ds) > 0 {
 			return ds[0]
 		}
 	}
