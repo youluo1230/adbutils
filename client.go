@@ -87,30 +87,26 @@ type AdbConnection struct {
 	Conn net.Conn
 }
 
-func (adbConnection AdbConnection) safeConnect() (*net.Conn, error) {
-	conn, err := adbConnection.createSocket()
+func (adbConnection AdbConnection) safeConnect(t time.Duration) (*net.Conn, error) {
+	conn, err := adbConnection.createSocket(t)
 	if err != nil {
 		switch reflect.TypeOf(err) {
 		case reflect.TypeOf(&net.OpError{}):
 			cmd := exec.Command(AdbPath(), "start-server")
 			err = cmd.Start()
 			if err != nil {
-				log.Println("start adb error: ", err.Error())
 				return nil, err
 			}
 			err = cmd.Wait()
 			if err != nil {
-				log.Println("start adb error: ", err.Error())
 				return nil, err
 			}
-			conn, err = adbConnection.createSocket()
+			conn, err = adbConnection.createSocket(t)
 			if err != nil {
-				log.Println("restart adb error! ", err.Error())
 				return nil, err
 			}
 			return conn, nil
 		default:
-			log.Println("unknown error! ", err.Error())
 			return nil, err
 		}
 	}
@@ -129,8 +125,11 @@ func (adbConnection AdbConnection) SetTimeout(timeOut time.Duration) error {
 	return nil
 }
 
-func (adbConnection AdbConnection) createSocket() (*net.Conn, error) {
-	conn, err := net.Dial("tcp", fmt.Sprintf("%v:%d", adbConnection.Host, adbConnection.Port))
+func (adbConnection AdbConnection) createSocket(t time.Duration) (*net.Conn, error) {
+	dialer := net.Dialer{
+		Timeout: t,
+	}
+	conn, err := dialer.Dial("tcp", fmt.Sprintf("%v:%d", adbConnection.Host, adbConnection.Port))
 	if err != nil {
 		return nil, err
 	}
@@ -363,60 +362,69 @@ func AdbPath() string {
 	return adbPath
 }
 
-func (adb *AdbClient) connect() *AdbConnection {
+func (adb *AdbClient) connect() (*AdbConnection, error) {
 	adbConnection := &AdbConnection{
 		Host: adb.Host,
 		Port: adb.Port,
 	}
-	conn, err := adbConnection.safeConnect()
+	conn, err := adbConnection.safeConnect(adb.SocketTime)
 	if err != nil {
-		log.Println("get connect error: ", err.Error())
+		return nil, err
 	}
 	adbConnection.Conn = *conn
-	return adbConnection
+	return adbConnection, nil
 
 }
 
-func (adb *AdbClient) ServerVersion() int {
-	c := adb.connect()
+func (adb *AdbClient) ServerVersion() (int, error) {
+	c, err := adb.connect()
 	defer c.Close()
+	if err != nil {
+		return 0, err
+	}
 	c.SendCommand("host:version")
 	c.CheckOkay()
 	res := c.ReadStringBlock()
 	l, _ := strconv.Atoi(res)
-	return l + 16
+	return l + 16, nil
 }
 
-func (adb *AdbClient) ServerKill() {
+func (adb *AdbClient) ServerKill() error {
 	if checkServer(adb.Host, adb.Port) {
-		c := adb.connect()
+		c, err := adb.connect()
 		defer c.Close()
+		if err != nil {
+			return err
+		}
 		c.SendCommand("host:kill")
 		c.CheckOkay()
 	}
+	return nil
 }
 
 func (adb *AdbClient) WaitFor() {
 	// pass
 }
 
-func (adb *AdbClient) Connect(addr string) string {
+func (adb *AdbClient) Connect(addr string) bool {
 	//addr (str): adb remote address [eg: 191.168.0.1:5555]
-	c := adb.connect()
+	c, err := adb.connect()
 	defer c.Close()
+	if err != nil {
+		return false
+	}
 	c.SendCommand("host:connect:" + addr)
 	c.CheckOkay()
-	return c.ReadStringBlock()
+	return true
 }
 
-func (adb *AdbClient) Disconnect(addr string, raiseErr bool) string {
+func (adb *AdbClient) Disconnect(addr string, raiseErr bool) bool {
 	//addr (str): adb remote address [eg: 191.168.0.1:5555]
-	c := adb.connect()
+	c, _ := adb.connect()
 	defer c.Close()
 	c.SendCommand("host:disconnect:" + addr)
 	c.CheckOkay()
-	s := c.ReadStringBlock()
-	return s
+	return true
 }
 
 type SerialNTransportID struct {
@@ -430,8 +438,11 @@ func (adb *AdbClient) Shell(serial string, command string, stream bool) interfac
 }
 
 func (adb *AdbClient) DeviceList() []AdbDevice {
-	res := []AdbDevice{}
-	c := adb.connect()
+	var res []AdbDevice
+	c, err := adb.connect()
+	if err != nil {
+		return res
+	}
 	defer c.Close()
 	c.SendCommand("host:devices")
 	c.CheckOkay()
