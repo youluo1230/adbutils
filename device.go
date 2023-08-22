@@ -83,8 +83,13 @@ func (mixin ShellMixin) SendKeys(text string) {
 
 func (mixin ShellMixin) escapeSpecialCharacters(text string) {}
 
-func (mixin ShellMixin) WlanIp() string {
-	res := mixin.run("ifconfig wlan0")
+// 有参 为otg设备检测eth0网口
+func (mixin ShellMixin) WlanIp(args ...bool) string {
+	cmd := "ifconfig wlan0 | grep -oE 'inet addr:([0-9]{1,3}\\.){3}[0-9]{1,3}' | awk '$2' | awk -F: '{print $2}'"
+	if len(args) > 0 {
+		cmd = "ifconfig eth0 | grep -oE 'inet addr:([0-9]{1,3}\\.){3}[0-9]{1,3}' | awk '$2' | awk -F: '{print $2}'"
+	}
+	res := mixin.run(cmd)
 	ipInfo := res.(string)
 	// TODO regrex
 	return ipInfo
