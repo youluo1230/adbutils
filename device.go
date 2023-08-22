@@ -17,6 +17,8 @@ import (
 )
 
 type ShellMixin struct {
+	Model       string //型号
+	DeviceType  string //机型
 	Client      *AdbClient
 	Serial      string
 	TransportID int

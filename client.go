@@ -441,17 +441,21 @@ func (adb *AdbClient) DeviceList() []AdbDevice {
 		return res
 	}
 	defer c.Close()
-	c.SendCommand("host:devices")
+	c.SendCommand("host:devices-l")
 	c.CheckOkay()
 	outPut := c.ReadStringBlock()
 	outPuts := strings.Split(outPut, "\n")
 	for _, line := range outPuts {
-		parts := strings.Split(strings.TrimSpace(line), "\t")
-		if len(parts) != 2 {
+		line = strings.ReplaceAll(strings.TrimSpace(line), "               ", " ")
+		parts := strings.Split(line, " ")
+		if len(parts) != 6 {
 			continue
 		}
 		if parts[1] == "device" {
-			res = append(res, AdbDevice{ShellMixin{Client: adb, Serial: parts[0]}})
+			id, _ := strconv.Atoi(parts[5][13:])
+			mode := parts[2][8:]
+			deviceType := parts[4][7:]
+			res = append(res, AdbDevice{ShellMixin{Client: adb, Serial: parts[0], TransportID: id, Model: mode, DeviceType: deviceType}})
 		}
 	}
 	return res
