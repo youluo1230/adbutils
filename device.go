@@ -562,39 +562,54 @@ func (sync Sync) Push(src, dst string, mode int, check bool) (int, error) {
 	return totalSize, nil
 }
 
-func (sync Sync) IterContent(path string) []byte {
+func (sync Sync) IterContent(path string, ch chan []byte) []byte {
 	c, err := sync.prepareSync(path, "RECV")
 	defer c.Close()
 	if err != nil {
 		log.Println("IterContent error ", err.Error())
 	}
 	chunks := make([]byte, 0)
+	ok := 0
 	for {
 		cmd := c.ReadString(4)
 		switch cmd {
 		case FAIL:
-			strSize := binary.LittleEndian.Uint32(c.Read(4))
-			errMsg := c.ReadString(int(strSize))
-			log.Println(fmt.Sprintf("Get %s Error %s", errMsg, path))
-			return chunks
+			//strSize := binary.LittleEndian.Uint32(c.Read(4))
+			//errMsg := c.ReadString(int(strSize))
+			ok = 1
+			break
 		case DATA:
 			chunkSize := binary.LittleEndian.Uint32(c.Read(4))
 			chunk := c.Read(int(chunkSize))
 			if len(chunk) != int(chunkSize) {
-				log.Println("read chunk missing")
+				return nil
 			}
-			chunks = append(chunks, chunk...)
+			if ch != nil { //如果有通道也给通道发送数据
+				ch <- chunk
+			} else {
+				chunks = append(chunks, chunk...)
+			}
 		case DONE:
-			return chunks
+			ok = 1
+			break
 		default:
-			log.Println("Invalid sync cmd: ", cmd)
-			return chunks
+			ok = 1
+			break
 		}
+		if ok == 1 {
+			break
+		}
+	}
+	if ch != nil {
+		close(ch)
+		return nil
+	} else {
+		return chunks
 	}
 }
 
 func (sync Sync) ReadBytes(path string) []byte {
-	return sync.IterContent(path)
+	return sync.IterContent(path, nil)
 }
 
 func (sync Sync) ReadText(path string) string {
@@ -605,13 +620,22 @@ func (sync Sync) Pull(src, dst string) (int, error) {
 	f, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC, 0644)
 	defer f.Close()
 	if err != nil {
-		log.Println("Sync pull file error! ", err.Error())
-	}
-	bytes := sync.IterContent(src)
-	size, err := f.Write(bytes)
-	if err != nil {
-		log.Println("Sync pull file error, when write! ", err.Error())
 		return 0, err
 	}
-	return size, nil
+	ch := make(chan []byte)
+	go sync.IterContent(src, ch)
+	i := 0
+	for {
+		b, ok := <-ch
+		if !ok {
+			break
+		}
+		_, err = f.Write(b)
+		if err != nil {
+			close(ch)
+			return i, err
+		}
+		i += len(b)
+	}
+	return i, nil
 }
