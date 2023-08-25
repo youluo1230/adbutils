@@ -14,6 +14,7 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -179,7 +180,7 @@ func (adbConnection AdbConnection) SendCommand(cmd string) {
 
 func (adbConnection AdbConnection) ReadString(n int) string {
 	res := adbConnection.Read(n)
-	return string(res)
+	return strings.TrimSpace(string(res))
 }
 func (adbConnection AdbConnection) ReadStringBlock() string {
 	str := adbConnection.ReadString(4)
@@ -444,19 +445,15 @@ func (adb *AdbClient) DeviceList() []AdbDevice {
 	c.SendCommand("host:devices-l")
 	c.CheckOkay()
 	outPut := c.ReadStringBlock()
-	outPuts := strings.Split(outPut, "\n")
+	re := regexp.MustCompile(`(\S+)\s+device\s+product:(\S+)\s+model:(\S+)\s+device:(\S+)\s+transport_id:(\d)`)
+	outPuts := re.FindAllStringSubmatch(outPut, -1)
 	for _, line := range outPuts {
-		line = strings.ReplaceAll(strings.TrimSpace(line), "               ", " ")
-		parts := strings.Split(line, " ")
-		if len(parts) != 6 {
+		if len(line) != 6 {
 			continue
 		}
-		if parts[1] == "device" {
-			id, _ := strconv.Atoi(parts[5][13:])
-			mode := parts[2][8:]
-			deviceType := parts[4][7:]
-			res = append(res, AdbDevice{ShellMixin{Client: adb, Serial: parts[0], TransportID: id, Model: mode, DeviceType: deviceType}})
-		}
+		id, _ := strconv.Atoi(line[5])
+		res = append(res, AdbDevice{ShellMixin{Client: adb, Serial: line[1], TransportID: id, Model: line[3], DeviceType: line[4]}})
+
 	}
 	return res
 }

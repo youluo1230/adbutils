@@ -16,6 +16,8 @@ import (
 	"time"
 )
 
+// ShellMixin
+// @Description: adb设备shell通信
 type ShellMixin struct {
 	Model       string //型号
 	DeviceType  string //机型
@@ -224,6 +226,8 @@ func (mixin ShellMixin) openTransport(command string, timeOut time.Duration) (*A
 	return c, nil
 }
 
+// AdbDevice adb设备
+// @Description: 主要通过tcp传输 指定设备 后发送shell指令
 type AdbDevice struct {
 	ShellMixin
 }
@@ -385,6 +389,14 @@ func (adbDevice AdbDevice) Push(local, remote string) string {
 	return adbDevice.AdbOut(fmt.Sprintf("push %v %v", local, remote))
 }
 
+// CreateConnection
+//
+//	@Description: 在一个设备上(连接到指定设备)上创建一个 socket 连接到远端服务端的指定服务地址(例如 scrcpy在安卓的服务端)
+//	@receiver adbDevice
+//	@param netWork
+//	@param address
+//	@return net.Conn
+//	@return error
 func (adbDevice AdbDevice) CreateConnection(netWork, address string) (net.Conn, error) {
 	c, err := adbDevice.openTransport("", 0)
 	if err != nil {
@@ -408,12 +420,21 @@ func (adbDevice AdbDevice) CreateConnection(netWork, address string) (net.Conn, 
 	return c.Conn, nil
 }
 
-// Sync region ync
+// Sync
+// @Description: 与adb服务器同步通信的一些功能 功能内部需要关闭网络连接
 type Sync struct {
 	*AdbClient
 	Serial string
 }
 
+// prepareSync
+//
+//	@Description: 准备同步 会创建一个tcp链接到服务端 执行些指令  在功能外部进行关闭链接
+//	@receiver sync
+//	@param path
+//	@param cmd
+//	@return *AdbConnection
+//	@return error
 func (sync Sync) prepareSync(path, cmd string) (*AdbConnection, error) {
 	c, err := sync.AdbClient.Device(SerialNTransportID{Serial: sync.Serial}).openTransport("", 10)
 	if err != nil {
@@ -564,6 +585,13 @@ func (sync Sync) Push(src, dst string, mode int, check bool) (int, error) {
 	return totalSize, nil
 }
 
+// IterContent
+//
+//	@Description: 迭代读取内容，可传个管道在外部同时取出数据
+//	@receiver sync
+//	@param path
+//	@param ch
+//	@return []byte
 func (sync Sync) IterContent(path string, ch chan []byte) []byte {
 	c, err := sync.prepareSync(path, "RECV")
 	defer c.Close()
