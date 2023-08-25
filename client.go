@@ -472,6 +472,16 @@ func (adb *AdbClient) Device(snNtid SerialNTransportID) AdbDevice {
 	return AdbDevice{ShellMixin{Client: adb, Serial: snNtid.Serial, TransportID: snNtid.TransportID}}
 }
 
+// ExtendedServices
+//
+//	@Description: 扩展服务，返回一个客户端链接
+//	@receiver adb
+//	@return *AdbConnection
+//	@return error
+func (adb *AdbClient) ExtendedServices() (*AdbConnection, error) {
+	return adb.connect()
+}
+
 func NewAdb(host string, port int, timeOut time.Duration) *AdbClient {
 	adb := &AdbClient{Host: host, Port: port, SocketTime: time.Second * timeOut}
 	return adb

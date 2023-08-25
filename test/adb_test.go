@@ -16,8 +16,7 @@ func TestServerVersion(t *testing.T) {
 }
 
 func TestConnect(t *testing.T) {
-	adb := adbutils.NewAdb("localhost", 5037, time.Second*100)
-	adb.DeviceList()
+	//adb := adbutils.NewAdb("localhost", 5037, time.Second*100)
 	//println(adb.DeviceList()[0].Sync())
 	//println(adbutils.AdbPath())
 	//println(adb.Device(adbutils.SerialNTransportID{Serial: "a918b5a9"}).Sync().Stat("/data/local/tmp/output.txt").Mtime.String())
